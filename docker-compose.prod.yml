@@ -1,0 +1,81 @@
+# Production stack: the app plus its own MongoDB. Run on the server from the project root:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Needs a `.env` file next to this one (never committed) with:
+#   SHAYUFLOW_IMAGE        e.g. yourname/shayuflow:1.0.0 (defaults to a locally built image)
+#   MONGO_ROOT_USER        MongoDB admin user, used only for setup and maintenance
+#   MONGO_ROOT_PASSWORD
+#   MONGO_APP_USER         the limited user the app connects as
+#   MONGO_APP_PASSWORD
+#   JWT_SECRET, JWT_EXPIRES_IN, CLIENT_ORIGIN, YOUTUBE_API_KEY
+# Use letters and digits only in the Mongo passwords (e.g. `openssl rand -hex 24`),
+# because they are placed inside a connection URL.
+
+name: shayuflow
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: shayuflow-mongo
+    restart: unless-stopped
+    # Keep MongoDB's cache small so it fits next to the app on a small server.
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?set MONGO_ROOT_USER in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
+      MONGO_INITDB_DATABASE: shayuflow
+      MONGO_APP_USER: ${MONGO_APP_USER:?set MONGO_APP_USER in .env}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongo-init:/docker-entrypoint-initdb.d:ro
+    # No published ports: only the app container can reach the database.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    build: .
+    image: ${SHAYUFLOW_IMAGE:-shayuflow:latest}
+    container_name: shayuflow
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/shayuflow?authSource=shayuflow
+    # Bound to localhost only: the reverse proxy on the host is the sole way in.
+    ports:
+      - "127.0.0.1:5000:5000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mongo_data:
