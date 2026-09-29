@@ -1,0 +1,23 @@
+# Secrets: never commit environment files, anywhere in the repo
+.env
+.env.*
+*.env
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local scratch files
+/image.png
