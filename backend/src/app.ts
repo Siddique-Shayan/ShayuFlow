@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import helmet from "helmet";
 import { env } from "./config/env.js";
 import { errorHandler, notFound } from "./middlewares/errorHandler.js";
+import { requestLogger } from "./middlewares/requestLogger.js";
 import routes from "./routes/index.js";
 
 // The production image copies the built frontend into ./public. In development it is empty.
@@ -32,6 +33,7 @@ app.use(
     },
   }),
 );
+app.use(requestLogger);
 app.use(cors({ origin: env.clientOrigin }));
 app.use(express.json({ limit: "100kb" }));
 
