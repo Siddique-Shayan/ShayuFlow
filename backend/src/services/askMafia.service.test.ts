@@ -113,3 +113,34 @@ describe("transcript helpers", async () => {
     expect(alignChunk([{ startSec: 5, text: "x" }], 0, 1200)).toEqual([{ startSec: 5, text: "x" }]);
   });
 });
+
+describe("parseQuotaError", async () => {
+  const { parseQuotaError } = await import("./ai.service.js");
+
+  it("reads quota ids and the retry delay from a Gemini 429 body", () => {
+    expect(
+      parseQuotaError({
+        error: {
+          details: [
+            { "@type": "type.googleapis.com/google.rpc.QuotaFailure", violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }] },
+            { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "37s" },
+          ],
+        },
+      }),
+    ).toEqual({ quotaIds: ["GenerateRequestsPerDayPerProjectPerModel-FreeTier"], retryAfterSec: 37 });
+    expect(parseQuotaError(null)).toEqual({ quotaIds: [], retryAfterSec: null });
+  });
+});
+
+describe("fitToDuration", async () => {
+  const { fitToDuration } = await import("./transcript.service.js");
+
+  it("scales drifted timestamps back inside the video and leaves good ones alone", () => {
+    const drifted = fitToDuration([{ startSec: 0, text: "a" }, { startSec: 3114, text: "b" }], 1884);
+    expect(drifted[0].startSec).toBe(0);
+    expect(drifted[1].startSec).toBeCloseTo(1879, 0);
+    const fine = [{ startSec: 100, text: "a" }];
+    expect(fitToDuration(fine, 1884)).toBe(fine);
+    expect(fitToDuration(fine, 0)).toBe(fine);
+  });
+});

@@ -2,16 +2,17 @@ import { fetchTranscript, YoutubeTranscriptTooManyRequestError } from "youtube-t
 import { VideoTranscript } from "../models/VideoTranscript.js";
 import { AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
+import { toClock } from "../utils/time.js";
 import { aiService } from "./ai.service.js";
 
 // Keeps a single request well inside the free-tier token limits.
 const MAX_CHARS = 150_000;
 // Captions are merged into lines of about this many seconds for the timestamped transcript.
 export const LINE_SECONDS = 30;
-// Gemini transcribes long videos in chunks of this length, a few at a time, to stay within token limits.
-const CHUNK_SECONDS = 10 * 60;
-const SINGLE_CALL_MAX_SECONDS = 12 * 60;
-const PARALLEL_CHUNKS = 4;
+// Gemini transcribes long videos in chunks of this length, one at a time: few requests (daily limit) spread out (per-minute limit).
+const CHUNK_SECONDS = 30 * 60;
+const SINGLE_CALL_MAX_SECONDS = 40 * 60;
+const PARALLEL_CHUNKS = 1;
 
 export interface TranscriptLine {
   startSec: number;
@@ -32,12 +33,17 @@ const offsetsInMs = (offsets: number[], durationSec: number) => {
   return offsets.every(Number.isInteger) && max > 10_000;
 };
 
-export const formatTimestamp = (sec: number) => {
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600);
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+export const formatTimestamp = toClock;
+
+/**
+ * Safety net for model timestamps that run past the end of the video (they can drift on long videos):
+ * scales them back linearly so the last one lands just before the end.
+ */
+export const fitToDuration = (lines: TranscriptLine[], durationSec: number): TranscriptLine[] => {
+  const last = Math.max(0, ...lines.map((l) => l.startSec));
+  if (!durationSec || last <= durationSec) return lines;
+  const scale = Math.max(0, durationSec - 5) / last;
+  return lines.map((l) => ({ ...l, startSec: l.startSec * scale }));
 };
 
 /** Merges short segments into ~30 second lines, capped at MAX_CHARS. */
@@ -73,7 +79,7 @@ export const alignChunk = (lines: TranscriptLine[], startSec: number, endSec: nu
 /** Gemini transcription from the YouTube URL, chunked for long videos. */
 const fromGemini = async (youtubeVideoId: string, durationSec: number): Promise<TranscriptLine[]> => {
   if (!durationSec || durationSec <= SINGLE_CALL_MAX_SECONDS) {
-    return mergeLines(await aiService.transcribeYoutube(youtubeVideoId));
+    return mergeLines(fitToDuration(await aiService.transcribeYoutube(youtubeVideoId), durationSec));
   }
 
   const ranges: { startSec: number; endSec: number }[] = [];
@@ -88,7 +94,7 @@ const fromGemini = async (youtubeVideoId: string, durationSec: number): Promise<
       }),
     );
   }
-  return mergeLines(chunks.flat().sort((a, b) => a.startSec - b.startSec));
+  return mergeLines(fitToDuration(chunks.flat().sort((a, b) => a.startSec - b.startSec), durationSec));
 };
 
 export const transcriptService = {

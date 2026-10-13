@@ -17,7 +17,8 @@ export const env = {
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   // Optional: AI summaries are hidden when no key is set. A free key comes from Google AI Studio.
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
-  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  // Flash-Lite: fast, reads YouTube URLs, and has a free-tier quota separate from Flash.
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite",
   aiDailyLimit: Number(process.env.AI_DAILY_LIMIT ?? 20),
   aiChatDailyLimit: Number(process.env.AI_CHAT_DAILY_LIMIT ?? 50),
 };

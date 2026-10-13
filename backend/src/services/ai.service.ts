@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 import { logger } from "../utils/logger.js";
+import { parseTimestamp, toClock } from "../utils/time.js";
 
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -47,18 +48,18 @@ const transcriptSchema = {
   type: "ARRAY",
   items: {
     type: "OBJECT",
-    properties: { startSec: { type: "NUMBER" }, text: { type: "STRING" } },
-    required: ["startSec", "text"],
+    // MM:SS strings, the format the model reads video time in; raw seconds drift on long videos.
+    properties: { time: { type: "STRING" }, text: { type: "STRING" } },
+    required: ["time", "text"],
   },
 };
 
 const buildTranscribePrompt = (range?: { startSec: number; endSec: number }) =>
   [
     "Transcribe the speech in this video as accurately as you can, in its original language.",
-    range
-      ? `Only this part of the video is provided: from ${range.startSec}s to ${range.endSec}s. Give startSec in seconds from the start of the WHOLE video, so values fall between ${range.startSec} and ${range.endSec}.`
-      : "Give startSec in seconds from the start of the video.",
-    "Return a JSON array of segments {startSec, text}, one segment per sentence or short group of sentences, in time order.",
+    "time is when the segment starts, as MM:SS (or H:MM:SS past one hour), measured from the start of the WHOLE video.",
+    ...(range ? [`Only the part from ${toClock(range.startSec)} to ${toClock(range.endSec)} is provided, so every time falls in that range.`] : []),
+    "Return a JSON array of segments {time, text}, one segment per sentence or short group of sentences, in time order.",
     "If there is no speech, describe nothing and return an empty array.",
   ].join("\n");
 
@@ -120,6 +121,28 @@ export interface ChatTurn {
   text: string;
 }
 
+// Per-minute limits are waited out (up to this long, this many times); daily limits are reported instead.
+const MAX_RETRY_WAIT_SEC = 60;
+const MAX_RETRIES = 2;
+
+interface QuotaError {
+  quotaIds: string[];
+  retryAfterSec: number | null;
+}
+
+/** Reads which quota a Gemini 429 hit and how long Google asks us to wait. */
+export const parseQuotaError = (body: unknown): QuotaError => {
+  const details = (body as { error?: { details?: Record<string, unknown>[] } })?.error?.details ?? [];
+  const quotaIds = details.flatMap((d) =>
+    Array.isArray(d.violations) ? d.violations.map((v: { quotaId?: string }) => v.quotaId ?? "").filter(Boolean) : [],
+  );
+  const delay = details.find((d) => typeof d.retryDelay === "string")?.retryDelay as string | undefined;
+  const retryAfterSec = delay ? Number.parseFloat(delay) : null; // e.g. "37s" or "1.5s"
+  return { quotaIds, retryAfterSec: Number.isFinite(retryAfterSec) ? retryAfterSec : null };
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * One generateContent call returning the first candidate's text.
  * No `tools` are ever sent, so the model cannot call functions or search the web.
@@ -127,6 +150,7 @@ export interface ChatTurn {
 const generate = async (
   body: Record<string, unknown>,
   badRequestMessage?: string,
+  attempt = 0,
 ): Promise<string | undefined> => {
   if (!env.geminiApiKey) throw new AppError(503, "AI features are not configured");
 
@@ -136,7 +160,21 @@ const generate = async (
     body: JSON.stringify(body),
   });
 
-  if (res.status === 429) throw new AppError(429, "The AI service is busy right now. Try again in a minute.");
+  if (res.status === 429) {
+    const { quotaIds, retryAfterSec } = parseQuotaError(await res.json().catch(() => null));
+    logger.warn(`Gemini quota hit (${env.geminiModel})`, { quotaIds, retryAfterSec, attempt });
+    if (quotaIds.some((id) => /PerDay/i.test(id))) {
+      throw new AppError(
+        429,
+        "The AI's free daily quota is used up. It resets at midnight Pacific time; enabling billing on the Gemini API key removes the limit.",
+      );
+    }
+    if (attempt < MAX_RETRIES && (retryAfterSec ?? 30) <= MAX_RETRY_WAIT_SEC) {
+      await sleep(((retryAfterSec ?? 30) + 1) * 1000);
+      return generate(body, badRequestMessage, attempt + 1);
+    }
+    throw new AppError(429, "The AI service is busy right now. Try again in a minute.");
+  }
   if (res.status === 400 && badRequestMessage) {
     logger.warn("Gemini rejected the request", await res.text());
     throw new AppError(422, badRequestMessage);
@@ -193,10 +231,11 @@ export const aiService = {
     try {
       const parsed = JSON.parse(text ?? "") as unknown;
       if (!Array.isArray(parsed)) throw new Error("shape");
-      return parsed
-        .filter((l): l is { startSec: number; text: string } => typeof l?.startSec === "number" && typeof l?.text === "string")
-        .map((l) => ({ startSec: Math.max(0, l.startSec), text: l.text.replace(/\s+/g, " ").trim() }))
-        .filter((l) => l.text);
+      return parsed.flatMap((l: { time?: unknown; text?: unknown }) => {
+        const startSec = typeof l?.time === "string" ? parseTimestamp(l.time) : null;
+        const text = typeof l?.text === "string" ? l.text.replace(/\s+/g, " ").trim() : "";
+        return startSec === null || !text ? [] : [{ startSec, text }];
+      });
     } catch {
       logger.error("Gemini returned an unusable transcript", text?.slice(0, 500));
       throw new AppError(502, "The AI service returned an unusable transcript. Try again.");

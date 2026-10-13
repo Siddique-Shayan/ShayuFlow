@@ -3,6 +3,7 @@ import { VideoChat } from "../models/VideoChat.js";
 import { VideoKnowledge, type VideoKnowledgeDoc } from "../models/VideoKnowledge.js";
 import { videoRepository } from "../repositories/video.repository.js";
 import { AppError } from "../utils/AppError.js";
+import { parseTimestamp } from "../utils/time.js";
 import { aiService, type ChatTurn, type RawChatAnswer } from "./ai.service.js";
 import { remainingQuota, reserveQuota } from "./aiQuota.js";
 import { LINE_SECONDS, toTimestamped, transcriptService } from "./transcript.service.js";
@@ -50,12 +51,7 @@ export const buildSystemPrompt = (kb: Pick<VideoKnowledgeDoc, "title" | "summary
     "</transcript>",
   ].join("\n");
 
-/** "12:34" or "1:02:03" to seconds; null for anything else. */
-export const parseTimestamp = (time: string): number | null => {
-  const m = /^(?:(\d+):)?(\d{1,2}):(\d{2})$/.exec(time.trim());
-  if (!m) return null;
-  return Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]);
-};
+export { parseTimestamp };
 
 /**
  * Keeps only moments that fall inside a real transcript line, so the model cannot invent timestamps.
