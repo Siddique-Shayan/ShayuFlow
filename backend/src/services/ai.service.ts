@@ -43,6 +43,25 @@ export const stripMarkdown = (text: string): string =>
     .replace(/^\s*(?:[-•]|\d+[.)])\s+/gm, "")
     .trim();
 
+const transcriptSchema = {
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: { startSec: { type: "NUMBER" }, text: { type: "STRING" } },
+    required: ["startSec", "text"],
+  },
+};
+
+const buildTranscribePrompt = (range?: { startSec: number; endSec: number }) =>
+  [
+    "Transcribe the speech in this video as accurately as you can, in its original language.",
+    range
+      ? `Only this part of the video is provided: from ${range.startSec}s to ${range.endSec}s. Give startSec in seconds from the start of the WHOLE video, so values fall between ${range.startSec} and ${range.endSec}.`
+      : "Give startSec in seconds from the start of the video.",
+    "Return a JSON array of segments {startSec, text}, one segment per sentence or short group of sentences, in time order.",
+    "If there is no speech, describe nothing and return an empty array.",
+  ].join("\n");
+
 /** AskMafia's reply as the model returns it, before timestamps are checked against the transcript. */
 export interface RawChatAnswer {
   covered: boolean;
@@ -105,7 +124,10 @@ export interface ChatTurn {
  * One generateContent call returning the first candidate's text.
  * No `tools` are ever sent, so the model cannot call functions or search the web.
  */
-const generate = async (body: Record<string, unknown>): Promise<string | undefined> => {
+const generate = async (
+  body: Record<string, unknown>,
+  badRequestMessage?: string,
+): Promise<string | undefined> => {
   if (!env.geminiApiKey) throw new AppError(503, "AI features are not configured");
 
   const res = await fetch(`${API}/${env.geminiModel}:generateContent`, {
@@ -115,6 +137,10 @@ const generate = async (body: Record<string, unknown>): Promise<string | undefin
   });
 
   if (res.status === 429) throw new AppError(429, "The AI service is busy right now. Try again in a minute.");
+  if (res.status === 400 && badRequestMessage) {
+    logger.warn("Gemini rejected the request", await res.text());
+    throw new AppError(422, badRequestMessage);
+  }
   if (!res.ok) {
     logger.error(`Gemini error ${res.status}`, await res.text());
     throw new AppError(502, "The AI service failed. Try again later.");
@@ -130,6 +156,51 @@ export const aiService = {
   },
   get model() {
     return env.geminiModel;
+  },
+
+  /**
+   * Transcribes a public YouTube video from its URL; Google fetches the video, so this works where YouTube
+   * blocks caption requests (e.g. cloud servers). A low frame rate keeps it to ~40 tokens per second, mostly audio.
+   * `range` limits it to part of the video, in seconds; timestamps are asked for relative to the whole video.
+   */
+  async transcribeYoutube(youtubeVideoId: string, range?: { startSec: number; endSec: number }) {
+    const text = await generate(
+      {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                fileData: { fileUri: `https://www.youtube.com/watch?v=${youtubeVideoId}` },
+                videoMetadata: {
+                  fps: 0.1,
+                  ...(range ? { startOffset: `${range.startSec}s`, endOffset: `${range.endSec}s` } : {}),
+                },
+              },
+              { text: buildTranscribePrompt(range) },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: transcriptSchema,
+          mediaResolution: "MEDIA_RESOLUTION_LOW",
+          temperature: 0,
+        },
+      },
+      "The AI could not read this video. It may be private, age-restricted or unavailable.",
+    );
+    try {
+      const parsed = JSON.parse(text ?? "") as unknown;
+      if (!Array.isArray(parsed)) throw new Error("shape");
+      return parsed
+        .filter((l): l is { startSec: number; text: string } => typeof l?.startSec === "number" && typeof l?.text === "string")
+        .map((l) => ({ startSec: Math.max(0, l.startSec), text: l.text.replace(/\s+/g, " ").trim() }))
+        .filter((l) => l.text);
+    } catch {
+      logger.error("Gemini returned an unusable transcript", text?.slice(0, 500));
+      throw new AppError(502, "The AI service returned an unusable transcript. Try again.");
+    }
   },
 
   /**

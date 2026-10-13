@@ -5,7 +5,7 @@ import { videoRepository } from "../repositories/video.repository.js";
 import { AppError } from "../utils/AppError.js";
 import { aiService, type ChatTurn, type RawChatAnswer } from "./ai.service.js";
 import { remainingQuota, reserveQuota } from "./aiQuota.js";
-import { LINE_SECONDS, toPlainText, toTimestamped, transcriptService } from "./transcript.service.js";
+import { LINE_SECONDS, toTimestamped, transcriptService } from "./transcript.service.js";
 import { videoSummaryService } from "./videoSummary.service.js";
 
 // Earlier messages sent with each question, so follow-ups like "explain that again" work.
@@ -129,9 +129,10 @@ export const askMafiaService = {
     const video = await findVideo(userId, videoId);
     if (await VideoKnowledge.exists({ youtubeVideoId: video.youtubeVideoId })) return { ready: true };
 
+    // Summary first: it reuses the cached one, or reserves quota before any (possibly AI) transcription,
+    // and caches the transcript so the lines below come from the cache.
+    const summary = await videoSummaryService.generate(userId, videoId);
     const lines = await transcriptService.lines(video.youtubeVideoId, video.durationSec);
-    // Reuses the cached summary when there is one; otherwise counts as one summary generation.
-    const summary = await videoSummaryService.generate(userId, videoId, toPlainText(lines));
     await VideoKnowledge.updateOne(
       { youtubeVideoId: video.youtubeVideoId },
       {

@@ -89,3 +89,27 @@ describe("buildSystemPrompt", () => {
     expect(prompt.indexOf("ONLY")).toBeLessThan(prompt.indexOf("<summary>"));
   });
 });
+
+describe("transcript helpers", async () => {
+  const { alignChunk, mergeLines } = await import("./transcript.service.js");
+
+  it("merges short segments into ~30 second lines", () => {
+    expect(
+      mergeLines([
+        { startSec: 0, text: "a" },
+        { startSec: 10, text: " b " },
+        { startSec: 31, text: "c" },
+        { startSec: 40, text: "" },
+      ]),
+    ).toEqual([
+      { startSec: 0, text: "a b" },
+      { startSec: 31, text: "c" },
+    ]);
+  });
+
+  it("shifts chunk-relative timestamps into place and leaves absolute ones alone", () => {
+    expect(alignChunk([{ startSec: 5, text: "x" }], 1200, 2400)).toEqual([{ startSec: 1205, text: "x" }]);
+    expect(alignChunk([{ startSec: 1205, text: "x" }], 1200, 2400)).toEqual([{ startSec: 1205, text: "x" }]);
+    expect(alignChunk([{ startSec: 5, text: "x" }], 0, 1200)).toEqual([{ startSec: 5, text: "x" }]);
+  });
+});

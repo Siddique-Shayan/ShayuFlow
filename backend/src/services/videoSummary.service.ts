@@ -34,7 +34,7 @@ export const videoSummaryService = {
 
     const release = await reserveSummaryQuota(userId);
     try {
-      const text = transcript ?? (await transcriptService.fetch(video.youtubeVideoId));
+      const text = transcript ?? (await transcriptService.fetch(video.youtubeVideoId, video.durationSec));
       const result = await aiService.summarize(video.title, text);
       await VideoSummary.updateOne(
         { youtubeVideoId: video.youtubeVideoId },
