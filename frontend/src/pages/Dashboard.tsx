@@ -7,7 +7,7 @@ import { EmptyState, IconBadge, ListSkeleton, PageHeader } from '../components/u
 import { VideoRow } from '../components/VideoRow'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-import { formatDuration } from '../lib/format'
+import { formatDuration, plannedSec } from '../lib/format'
 import type { Playlist, Stats, Video } from '../lib/types'
 
 const greeting = () => {
@@ -32,7 +32,7 @@ export default function Dashboard() {
 
   const titleOf = (id: string) => playlists.data?.find((p) => p._id === id)?.title
   const videos = today.data ?? []
-  const todaySec = videos.reduce((s, v) => s + v.durationSec, 0)
+  const todaySec = videos.reduce((s, v) => s + plannedSec(v), 0)
   const hasPlaylists = (playlists.data?.length ?? 0) > 0
   const s = stats.data
 
@@ -75,7 +75,7 @@ export default function Dashboard() {
         ) : videos.length > 0 ? (
           <ul className="-mx-2 divide-y divide-slate-100">
             {videos.map((v) => (
-              <VideoRow key={v._id} video={v} meta={titleOf(v.playlistId)} />
+              <VideoRow key={`${v._id}-${v.segment?.startSec ?? 0}`} video={v} meta={titleOf(v.playlistId)} />
             ))}
           </ul>
         ) : hasPlaylists ? (

@@ -4,7 +4,10 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true, select: false },
+    // Absent for accounts created with Google that never set a password.
+    passwordHash: { type: String, select: false },
+    // Google's stable account id ("sub"), set on first Google sign-in.
+    googleId: { type: String, unique: true, sparse: true, select: false },
     bio: { type: String, default: "" },
     avatarUrl: { type: String, default: "" },
     // Study minutes for each weekday, index 0 = Sunday ... 6 = Saturday. 0 means a day off.

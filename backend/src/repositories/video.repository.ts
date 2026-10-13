@@ -16,7 +16,11 @@ export const videoRepository = {
       userId,
       completed: false,
       skipped: { $ne: true },
-      scheduledDate: { $gte: from, $lte: to },
+      $or: [
+        { "segments.date": { $gte: from, $lte: to } },
+        // Videos planned before segments existed only carry scheduledDate.
+        { "segments.0": { $exists: false }, scheduledDate: { $gte: from, $lte: to } },
+      ],
     }).sort({ scheduledDate: 1, position: 1 }),
   listBacklog: (userId: string, before: Date) =>
     Video.find({
@@ -27,11 +31,15 @@ export const videoRepository = {
     }).sort({ scheduledDate: 1 }),
   listCompletedBetween: (userId: string, from: Date, to: Date) =>
     Video.find({ userId, completed: true, completedAt: { $gte: from, $lt: to } }),
-  setSchedule: (updates: { id: string; date: Date }[]) =>
+  setSchedule: (updates: { id: string; segments: { date: Date; startSec: number; endSec: number }[] }[]) =>
     updates.length
       ? Video.bulkWrite(
           updates.map((u) => ({
-            updateOne: { filter: { _id: u.id }, update: { $set: { scheduledDate: u.date } } },
+            updateOne: {
+              filter: { _id: u.id },
+              // Plain objects are fine at runtime; mongoose types the field as a DocumentArray.
+              update: { $set: { scheduledDate: u.segments[0].date, segments: u.segments as never } },
+            },
           })),
         )
       : Promise.resolve(null),

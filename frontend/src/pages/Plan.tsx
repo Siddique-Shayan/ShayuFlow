@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { FiChevronLeft, FiChevronRight } from 'react-icons/fi'
+import { FiChevronLeft, FiChevronRight, FiRefreshCw } from 'react-icons/fi'
 import { ListSkeleton, PageHeader } from '../components/ui'
 import { VideoRow } from '../components/VideoRow'
 import { api } from '../lib/api'
-import { dayKey, formatDuration } from '../lib/format'
+import { dayKey, formatDuration, plannedSec } from '../lib/format'
+import { useRefreshAll } from '../lib/queries'
 import type { Playlist, Video } from '../lib/types'
 
 const WEEK = 7
@@ -16,6 +17,11 @@ const label = (d: Date, options: Intl.DateTimeFormatOptions) =>
 export default function Plan() {
   const [offset, setOffset] = useState(0)
   const [now] = useState(() => Date.now())
+  const refresh = useRefreshAll()
+  const replan = useMutation({
+    mutationFn: () => api.post('/plan/recalculate', { strategy: 'spread' }),
+    onSuccess: refresh,
+  })
   const start = new Date(now + offset * WEEK * DAY_MS)
   const from = dayKey(start)
   const to = dayKey(new Date(start.getTime() + (WEEK - 1) * DAY_MS))
@@ -32,7 +38,7 @@ export default function Plan() {
   const days = Array.from({ length: WEEK }, (_, i) => new Date(start.getTime() + i * DAY_MS))
   const byDay = new Map<string, Video[]>()
   for (const v of plan.data ?? []) {
-    const key = dayKey(v.scheduledDate!)
+    const key = dayKey(v.segment?.date ?? v.scheduledDate!)
     byDay.set(key, [...(byDay.get(key) ?? []), v])
   }
   const todayKey = dayKey(new Date(now))
@@ -44,6 +50,15 @@ export default function Plan() {
         subtitle={`${label(days[0], { day: 'numeric', month: 'short' })} – ${label(days[WEEK - 1], { day: 'numeric', month: 'short' })}`}
         actions={
           <div className="flex gap-1.5">
+            <button
+              className="btn-outline !p-2.5"
+              aria-label="Re-plan"
+              title="Re-plan"
+              disabled={replan.isPending}
+              onClick={() => replan.mutate()}
+            >
+              <FiRefreshCw className={`size-4 ${replan.isPending ? 'animate-spin' : ''}`} />
+            </button>
             <button className="btn-outline !p-2.5" aria-label="Previous week" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
               <FiChevronLeft className="size-4" />
             </button>
@@ -62,7 +77,7 @@ export default function Plan() {
             const key = dayKey(d)
             const vids = byDay.get(key) ?? []
             const isToday = key === todayKey
-            const sec = vids.reduce((s, v) => s + v.durationSec, 0)
+            const sec = vids.reduce((s, v) => s + plannedSec(v), 0)
 
             if (vids.length === 0) {
               return (
@@ -88,7 +103,7 @@ export default function Plan() {
                 </div>
                 <ul className="-mx-2 divide-y divide-slate-100">
                   {vids.map((v) => (
-                    <VideoRow key={v._id} video={v} meta={playlists.data?.find((p) => p._id === v.playlistId)?.title} />
+                    <VideoRow key={`${v._id}-${v.segment?.startSec ?? 0}`} video={v} meta={playlists.data?.find((p) => p._id === v.playlistId)?.title} />
                   ))}
                 </ul>
               </section>

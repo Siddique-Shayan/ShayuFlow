@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FiBarChart2, FiBookOpen, FiCalendar, FiHome, FiLogOut, FiMenu, FiMoon, FiPlay, FiSettings, FiSun, FiUsers, FiX } from 'react-icons/fi'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
 import { Avatar } from './ui'
@@ -74,6 +74,7 @@ function NavMenu({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const { theme, toggle } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
+  const wide = !!useMatch('/videos/:id')
   const close = () => setMenuOpen(false)
 
   // While the drawer is open: Escape closes it and the page behind it doesn't scroll.
@@ -142,7 +143,8 @@ export function Layout() {
       )}
 
       <main className="md:pl-60">
-        <div className="mx-auto max-w-4xl px-4 py-5 pb-28 sm:px-6 sm:py-8 md:pb-10">
+        {/* The video page is wider so AskMafia can sit beside the summary and notes. */}
+        <div className={`mx-auto ${wide ? 'max-w-7xl' : 'max-w-4xl'} px-4 py-5 pb-28 sm:px-6 sm:py-8 md:pb-10`}>
           <Outlet />
         </div>
       </main>

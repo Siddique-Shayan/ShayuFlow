@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { env } from "../config/env.js";
 import { userRepository } from "../repositories/user.repository.js";
 import { authService } from "../services/auth.service.js";
 import { AppError } from "../utils/AppError.js";
@@ -10,6 +11,15 @@ export const authController = {
 
   async login(req: Request, res: Response) {
     res.json(await authService.login(req.body));
+  },
+
+  async google(req: Request, res: Response) {
+    res.json(await authService.google(req.body.credential));
+  },
+
+  /** Public sign-in settings for the login page; the client id is not a secret. */
+  config(_req: Request, res: Response) {
+    res.json({ googleClientId: env.googleClientId || null });
   },
 
   async me(req: Request, res: Response) {

@@ -46,9 +46,26 @@ export const computePlan = async (userId: string): Promise<PlanResult> => {
 
 /** Rebuilds and saves the schedule. */
 export const replan = async (userId: string): Promise<PlaylistReport[]> => {
-  const { assignments, reports } = await computePlan(userId);
-  await videoRepository.setSchedule([...assignments].map(([id, date]) => ({ id, date })));
+  const { segments, reports } = await computePlan(userId);
+  await videoRepository.setSchedule([...segments].map(([id, parts]) => ({ id, segments: parts })));
   return reports;
+};
+
+/** One entry per study day in [from, to], so a split video shows up once on each of its days. */
+const expandDays = async (userId: string, from: Date, to: Date) => {
+  const videos = await videoRepository.listScheduledBetween(userId, from, to);
+  const entries = videos.flatMap((v) => {
+    const { segments, ...rest } = v.toObject();
+    const parts = segments.length
+      ? segments
+      : [{ date: v.scheduledDate!, startSec: 0, endSec: v.durationSec }];
+    return parts
+      .filter((s) => s.date >= from && s.date <= to)
+      .map((segment) => ({ ...rest, segment }));
+  });
+  return entries.sort(
+    (a, b) => a.segment.date.getTime() - b.segment.date.getTime() || a.position - b.position,
+  );
 };
 
 export const planService = {
@@ -56,11 +73,10 @@ export const planService = {
 
   today: (userId: string) => {
     const today = startOfDay(new Date());
-    return videoRepository.listScheduledBetween(userId, today, today);
+    return expandDays(userId, today, today);
   },
 
-  range: (userId: string, from: Date, to: Date) =>
-    videoRepository.listScheduledBetween(userId, startOfDay(from), startOfDay(to)),
+  range: (userId: string, from: Date, to: Date) => expandDays(userId, startOfDay(from), startOfDay(to)),
 
   async backlog(userId: string) {
     const videos = await videoRepository.listBacklog(userId, startOfDay(new Date()));

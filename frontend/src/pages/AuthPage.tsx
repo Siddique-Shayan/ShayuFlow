@@ -2,9 +2,11 @@ import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { FiCalendar, FiTarget, FiUsers } from 'react-icons/fi'
 import { Link, Navigate } from 'react-router-dom'
+import GoogleButton from '../components/GoogleButton'
 import { Logo } from '../components/Layout'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { useGoogleClientId } from '../lib/queries'
 
 const PITCHES = [
   { icon: FiCalendar, text: 'A day-by-day plan built around your deadlines' },
@@ -16,6 +18,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { isAuthed, signIn } = useAuth()
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const isRegister = mode === 'register'
+  const { data: googleClientId } = useGoogleClientId()
 
   const submit = useMutation({
     mutationFn: async () =>
@@ -35,7 +38,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-indigo-600 p-12 text-white lg:flex">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-indigo-600 p-12 text-white lg:flex dark:bg-indigo-800">
         <div className="absolute -right-24 -top-24 size-96 rounded-full bg-white/10" />
         <div className="absolute -bottom-32 -left-16 size-96 rounded-full bg-white/5" />
         <div className="relative">
@@ -65,7 +68,18 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{isRegister ? 'Create your account' : 'Welcome back'}</h1>
           <p className="mt-1 text-sm text-slate-500">{isRegister ? 'Start planning your learning.' : 'Log in to continue.'}</p>
 
-          <form onSubmit={onSubmit} className="mt-7 space-y-4">
+          {googleClientId && (
+            <div className="mt-7 space-y-5">
+              <GoogleButton mode={mode} clientId={googleClientId} />
+              <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                or with email
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={onSubmit} className={`${googleClientId ? 'mt-5' : 'mt-7'} space-y-4`}>
             {isRegister && (
               <div>
                 <label className="label" htmlFor="name">Name</label>

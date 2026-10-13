@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { FiArrowDown, FiArrowUp, FiCheck, FiClock, FiEdit3, FiRotateCcw, FiSkipForward } from 'react-icons/fi'
+import { FiArrowDown, FiArrowUp, FiCheck, FiClock, FiEdit3, FiRotateCcw, FiSkipForward, FiZap } from 'react-icons/fi'
+import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { formatDuration } from '../lib/format'
-import { useToggleVideo, useUpdateVideo } from '../lib/queries'
+import { errorMessage } from '../lib/api'
+import { formatClock, formatDuration, plannedSec } from '../lib/format'
+import { useAiEnabled, useGenerateSummary, useToggleVideo, useUpdateVideo, useVideoSummary } from '../lib/queries'
 import type { Video } from '../lib/types'
 
 interface Manage {
@@ -20,6 +22,19 @@ export function VideoRow({ video, meta, manage }: { video: Video; meta?: string;
   const update = useUpdateVideo()
   const [noteOpen, setNoteOpen] = useState(false)
   const [draft, setDraft] = useState(video.note)
+  const aiEnabled = useAiEnabled().data
+  const [aiOpen, setAiOpen] = useState(false)
+  const summary = useVideoSummary(video._id, !!aiEnabled && aiOpen)
+  const generate = useGenerateSummary(video._id)
+
+  const addSummaryToNote = () => {
+    if (!summary.data) return
+    const block = `AI summary: ${summary.data.summary}\n${summary.data.keyPoints.map((p) => `- ${p}`).join('\n')}`
+    update.mutate(
+      { id: video._id, patch: { note: [video.note, block].filter(Boolean).join('\n\n').slice(0, 5000) } },
+      { onSuccess: () => toast.success('Added to notes') },
+    )
+  }
 
   const saveNote = () =>
     update.mutate(
@@ -34,6 +49,16 @@ export function VideoRow({ video, meta, manage }: { video: Video; meta?: string;
 
   const actions = (
     <>
+      {aiEnabled && (
+        <button
+          aria-label="AI summary"
+          title="AI summary"
+          className={`${iconBtn} ${aiOpen ? '!text-indigo-600' : ''}`}
+          onClick={() => setAiOpen((o) => !o)}
+        >
+          <FiZap className="size-4" />
+        </button>
+      )}
       <button
         aria-label="Notes"
         title="Notes"
@@ -87,21 +112,25 @@ export function VideoRow({ video, meta, manage }: { video: Video; meta?: string;
         )}
 
         <div className="min-w-0 flex-1">
-          <a
-            href={`https://www.youtube.com/watch?v=${video.youtubeVideoId}`}
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            to={`/videos/${video._id}`}
             className={`line-clamp-2 text-sm font-medium leading-snug hover:text-indigo-600 ${
               video.completed || video.skipped ? 'text-slate-400 line-through' : 'text-slate-800'
             }`}
           >
             {video.title}
-          </a>
+          </Link>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1">
               <FiClock className="size-3" />
-              {formatDuration(video.durationSec)}
+              {formatDuration(plannedSec(video))}
+              {plannedSec(video) < video.durationSec && ` of ${formatDuration(video.durationSec)}`}
             </span>
+            {video.segment && plannedSec(video) < video.durationSec && (
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-600">
+                Part {formatClock(video.segment.startSec)}–{formatClock(video.segment.endSec)}
+              </span>
+            )}
             {(video.skipped || meta) && <span className="truncate">{video.skipped ? 'Skipped' : meta}</span>}
           </p>
           {manage && <div className="-ml-2 mt-1 flex sm:hidden">{actions}</div>}
@@ -109,6 +138,34 @@ export function VideoRow({ video, meta, manage }: { video: Video; meta?: string;
 
         <div className={`shrink-0 items-center ${manage ? 'hidden sm:flex' : 'flex'}`}>{actions}</div>
       </div>
+
+      {aiOpen && (
+        <div className="animate-fade-up mt-2 space-y-2 pl-9 text-sm text-slate-700">
+          {summary.isLoading ? (
+            <p className="text-slate-500">Loading…</p>
+          ) : summary.data ? (
+            <>
+              <p>{summary.data.summary}</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {summary.data.keyPoints.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+              <button className="btn-ghost btn-sm" disabled={update.isPending} onClick={addSummaryToNote}>
+                Add to notes
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn-primary btn-sm" disabled={generate.isPending} onClick={() => generate.mutate()}>
+                {generate.isPending ? 'Summarising…' : 'Generate summary'}
+              </button>
+              {generate.isError && <p className="text-rose-600">{errorMessage(generate.error)}</p>}
+              <p className="text-xs text-slate-400">Uses the video's captions. AI summaries can contain mistakes.</p>
+            </>
+          )}
+        </div>
+      )}
 
       {noteOpen && (
         <div className="animate-fade-up mt-2 space-y-2 pl-9">

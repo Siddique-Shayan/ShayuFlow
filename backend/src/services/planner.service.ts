@@ -28,8 +28,16 @@ export interface PlaylistReport {
   requiredMinutesPerDay: number | null; // set only when atRisk
 }
 
+/** The part of a video watched on one study day, as offsets into the video. */
+export interface Segment {
+  date: Date; // study day (UTC midnight)
+  startSec: number;
+  endSec: number;
+}
+
 export interface PlanResult {
-  assignments: Map<string, Date>; // videoId -> study day (UTC midnight)
+  assignments: Map<string, Date>; // videoId -> first study day (UTC midnight)
+  segments: Map<string, Segment[]>; // videoId -> every day it is watched, in order
   reports: PlaylistReport[];
 }
 
@@ -38,12 +46,21 @@ interface Queue {
   priority: number;
   videos: PlanVideo[];
   next: number;
+  offset: number; // seconds of videos[next] already planned on earlier days
   credit: number; // weighted mode: seconds earned but not yet spent
+}
+
+interface Slice {
+  video: PlanVideo;
+  startSec: number;
+  endSec: number;
 }
 
 const DAY_MS = 86_400_000;
 const MAX_DAILY_MINUTES = 1440;
 const MAX_DAYS = 3650;
+/** A video is only split when both parts are at least this long, so nobody gets a 2-minute sliver. */
+const MIN_CHUNK_SEC = 600;
 
 export const startOfDay = (d: Date): Date =>
   new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -56,31 +73,47 @@ export const effectiveMinutes = (minutes: number[]): number[] =>
 
 const hasNext = (q: Queue): boolean => q.next < q.videos.length;
 
-/** Picks the videos for one study day. A day always gets at least one video, however long. */
-const fillDay = (queues: Queue[], budget: number, mode: ScheduleMode): PlanVideo[] => {
-  const picked: PlanVideo[] = [];
+/**
+ * Picks what to watch on one study day, filling the whole budget. A video that does not fit in the
+ * time left is split: the day takes the first part and the rest carries over to the next study day.
+ */
+const fillDay = (queues: Queue[], budget: number, mode: ScheduleMode): Slice[] => {
+  const picked: Slice[] = [];
   let used = 0;
-  const fits = (v: PlanVideo) => picked.length === 0 || used + v.durationSec <= budget;
-  const take = (q: Queue) => {
-    const v = q.videos[q.next++];
-    picked.push(v);
-    used += v.durationSec;
+  const minChunk = Math.min(MIN_CHUNK_SEC, budget);
+
+  /** Takes up to `cap` seconds from the head video of `q`. Returns false once the day cannot continue. */
+  const grab = (q: Queue, cap: number): boolean => {
+    const video = q.videos[q.next];
+    const rest = video.durationSec - q.offset;
+    let sec = rest;
+    if (rest > cap) {
+      // Leave a tail of at least minChunk, otherwise shrink this part instead.
+      sec = Math.min(cap, rest - minChunk);
+      if (sec < minChunk) return false;
+    }
+    picked.push({ video, startSec: q.offset, endSec: q.offset + sec });
+    used += sec;
+    q.credit = Math.max(0, q.credit - sec);
+    if (sec === rest) {
+      q.next++;
+      q.offset = 0;
+      return true;
+    }
+    q.offset += sec;
+    return false;
   };
 
   if (mode === "deadline") {
     for (const q of queues) {
-      while (hasNext(q)) {
-        if (!fits(q.videos[q.next])) return picked;
-        take(q);
-      }
+      while (hasNext(q)) if (!grab(q, budget - used)) return picked;
     }
   } else if (mode === "interleave") {
     for (;;) {
       let took = false;
       for (const q of queues) {
         if (!hasNext(q)) continue;
-        if (!fits(q.videos[q.next])) return picked;
-        take(q);
+        if (!grab(q, budget - used)) return picked;
         took = true;
       }
       if (!took) return picked;
@@ -92,21 +125,14 @@ const fillDay = (queues: Queue[], budget: number, mode: ScheduleMode): PlanVideo
     // Unused slice carries over, so a video longer than one day's slice is not starved.
     for (const q of active) {
       q.credit += (budget * q.priority) / totalWeight;
-      while (hasNext(q)) {
-        const v = q.videos[q.next];
-        if (q.credit < v.durationSec || used + v.durationSec > budget) break;
-        q.credit -= v.durationSec;
-        take(q);
+      while (hasNext(q) && q.credit >= minChunk) {
+        if (!grab(q, Math.min(q.credit, budget - used))) break;
       }
     }
     // Phase 2: hand any leftover time to the earliest deadlines.
     for (const q of active) {
-      while (hasNext(q) && used + q.videos[q.next].durationSec <= budget) {
-        q.credit = Math.max(0, q.credit - q.videos[q.next].durationSec);
-        take(q);
-      }
+      while (hasNext(q)) if (!grab(q, budget - used)) return picked;
     }
-    if (picked.length === 0) take(active[0]);
   }
   return picked;
 };
@@ -117,7 +143,7 @@ const schedule = (
   minutes: number[],
   mode: ScheduleMode,
   start: Date,
-): Map<string, Date> => {
+): Map<string, Segment[]> => {
   const queues: Queue[] = [...playlists]
     .sort((a, b) => a.deadline.getTime() - b.deadline.getTime())
     .map((p) => ({
@@ -125,29 +151,32 @@ const schedule = (
       priority: p.priority,
       videos: videos.filter((v) => v.playlistId === p.id).sort((a, b) => a.position - b.position),
       next: 0,
+      offset: 0,
       credit: 0,
     }));
 
-  const assignments = new Map<string, Date>();
+  const segments = new Map<string, Segment[]>();
   let day = start;
   for (let i = 0; i < MAX_DAYS && queues.some(hasNext); i++, day = addDays(day, 1)) {
     const dayMinutes = minutes[day.getUTCDay()];
     if (dayMinutes <= 0) continue;
-    for (const v of fillDay(queues, dayMinutes * 60, mode)) assignments.set(v.id, day);
+    for (const { video, startSec, endSec } of fillDay(queues, dayMinutes * 60, mode)) {
+      segments.set(video.id, [...(segments.get(video.id) ?? []), { date: day, startSec, endSec }]);
+    }
   }
-  return assignments;
+  return segments;
 };
 
 /** Last study day per playlist. A playlist that never finished maps to a far-future date. */
 const finishDates = (
   videos: PlanVideo[],
-  assignments: Map<string, Date>,
+  segments: Map<string, Segment[]>,
   start: Date,
 ): Map<string, Date> => {
   const never = addDays(start, MAX_DAYS);
   const finish = new Map<string, Date>();
   for (const v of videos) {
-    const d = assignments.get(v.id) ?? never;
+    const d = segments.get(v.id)?.at(-1)?.date ?? never;
     const cur = finish.get(v.playlistId);
     if (!cur || d > cur) finish.set(v.playlistId, d);
   }
@@ -162,8 +191,8 @@ export const buildPlan = (input: PlanInput): PlanResult => {
   const minutes = effectiveMinutes(input.weekdayMinutes);
   const run = (mins: number[]) => schedule(input.playlists, input.videos, mins, input.mode, start);
 
-  const assignments = run(minutes);
-  const finish = finishDates(input.videos, assignments, start);
+  const segments = run(minutes);
+  const finish = finishDates(input.videos, segments, start);
 
   const reports = [...input.playlists]
     .sort((a, b) => a.deadline.getTime() - b.deadline.getTime())
@@ -193,7 +222,8 @@ export const buildPlan = (input: PlanInput): PlanResult => {
       return { playlistId: p.id, finishDate, atRisk, requiredMinutesPerDay: required };
     });
 
-  return { assignments, reports };
+  const assignments = new Map([...segments].map(([id, parts]) => [id, parts[0].date] as const));
+  return { assignments, segments, reports };
 };
 
 /** Percentage (0-100, one decimal) of duration completed. */
