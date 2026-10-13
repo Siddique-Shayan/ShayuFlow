@@ -16,6 +16,7 @@ const registerSchema = z.object({
   password: z.string().min(8).max(128),
 });
 const loginSchema = z.object({ email: z.email(), password: z.string().min(1) });
+const googleSchema = z.object({ credential: z.string().min(1).max(4096) });
 const profileSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
@@ -44,13 +45,16 @@ const videoPatchSchema = z
   .object({ note: z.string().max(5000), skipped: z.boolean() })
   .partial()
   .strict();
-const recalcSchema = z.object({ strategy: z.enum(["spread", "increase", "extend"]) });
+const askSchema = z.object({ question: z.string().trim().min(1).max(1000) });
+const recalcSchema =z.object({ strategy: z.enum(["spread", "increase", "extend"]) });
 const friendRequestSchema = z.object({ email: z.email() });
 
 const router = Router();
 
 router.post("/auth/register", validate(registerSchema), authController.register);
 router.post("/auth/login", validate(loginSchema), authController.login);
+router.get("/auth/config", authController.config);
+router.post("/auth/google", validate(googleSchema), authController.google);
 
 router.use(requireAuth);
 
@@ -64,8 +68,16 @@ router.patch("/playlists/:id", validate(updatePlaylistSchema), playlistControlle
 router.put("/playlists/:id/order", validate(reorderSchema), playlistController.reorder);
 router.delete("/playlists/:id", playlistController.remove);
 
+router.get("/videos/:id", videoController.get);
 router.patch("/videos/:id/complete", validate(completeSchema), videoController.setCompleted);
 router.patch("/videos/:id", validate(videoPatchSchema), videoController.update);
+router.get("/ai/status", videoController.aiStatus);
+router.get("/videos/:id/summary", videoController.getSummary);
+router.post("/videos/:id/summary", videoController.generateSummary);
+router.get("/videos/:id/chat", videoController.getChat);
+router.post("/videos/:id/knowledge", videoController.buildKnowledge);
+router.post("/videos/:id/chat", validate(askSchema), videoController.ask);
+router.delete("/videos/:id/chat", videoController.clearChat);
 
 router.get("/plan/today", planController.today);
 router.get("/plan/backlog", planController.backlog);

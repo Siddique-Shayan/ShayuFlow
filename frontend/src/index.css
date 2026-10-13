@@ -4,6 +4,45 @@
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /*
+   * YouTube-style palette: red brand, neutral greys (white / near-black) and green for success.
+   * The app's classes name Tailwind palettes, so the palettes themselves are re-pointed here:
+   *   indigo, violet -> brand red   (indigo-600 is the primary button, ≥4.5:1 with white text)
+   *   slate          -> neutral grey (YouTube's #0f0f0f text and #f9f9f9 page)
+   *   emerald        -> green
+   * Dark-mode values live in the .dark block below.
+   */
+  --color-indigo-50: #fff1f1;
+  --color-indigo-100: #ffe0e0;
+  --color-indigo-200: #ffc4c4;
+  --color-indigo-300: #ff9b9b;
+  --color-indigo-400: #ff4d4d;
+  --color-indigo-500: #ff0000;
+  --color-indigo-600: #e00000;
+  --color-indigo-700: #b80000;
+  --color-indigo-800: #940000;
+  --color-indigo-900: #750000;
+  --color-violet-50: #fff1f1;
+  --color-violet-500: #c00000;
+
+  --color-slate-50: #f9f9f9;
+  --color-slate-100: #f2f2f2;
+  --color-slate-200: #e5e5e5;
+  --color-slate-300: #d3d3d3;
+  --color-slate-400: #a3a3a3;
+  --color-slate-500: #6f6f6f;
+  --color-slate-600: #606060;
+  --color-slate-700: #3f3f3f;
+  --color-slate-800: #272727;
+  --color-slate-900: #0f0f0f;
+
+  --color-emerald-50: #f0fdf4;
+  --color-emerald-200: #bbf7d0;
+  --color-emerald-400: #4ade80;
+  --color-emerald-500: #22c55e;
+  --color-emerald-600: #16a34a;
+  --color-emerald-700: #15803d;
   --animate-fade-up: fade-up 0.3s ease-out both;
   --animate-slide-in: slide-in 0.22s ease-out both;
   --animate-fade-in: fade-in 0.2s ease-out both;
@@ -61,8 +100,8 @@
       border-color: var(--color-slate-300);
     }
     to {
-      background-color: #10b981;
-      border-color: #10b981;
+      background-color: #16a34a;
+      border-color: #16a34a;
     }
   }
 
@@ -127,25 +166,26 @@
  */
 .dark {
   color-scheme: dark;
-  --surface: #171d33;
+  /* YouTube dark: #0f0f0f page, slightly lifted cards. */
+  --surface: #1a1a1a;
 
-  --color-slate-50: #0d111f;
-  --color-slate-100: #1a2038;
-  --color-slate-200: #2a3250;
-  --color-slate-300: #3d4767;
-  --color-slate-400: #7d8aa8;
-  --color-slate-500: #97a3bf;
-  --color-slate-600: #b3bdd3;
-  --color-slate-700: #ccd4e4;
-  --color-slate-800: #e6eaf3;
-  --color-slate-900: #f3f5fa;
+  --color-slate-50: #0f0f0f;
+  --color-slate-100: #242424;
+  --color-slate-200: #303030;
+  --color-slate-300: #424242;
+  --color-slate-400: #8a8a8a;
+  --color-slate-500: #aaaaaa;
+  --color-slate-600: #c4c4c4;
+  --color-slate-700: #d9d9d9;
+  --color-slate-800: #ececec;
+  --color-slate-900: #f1f1f1;
 
-  --color-indigo-50: #1c2050;
-  --color-indigo-100: #272d66;
-  --color-indigo-200: #3a4290;
-  --color-indigo-600: #7c83fb;
-  --color-indigo-700: #a5b4fc;
-  --color-violet-50: #241b4d;
+  --color-indigo-50: #2b0d0d;
+  --color-indigo-100: #3f1212;
+  --color-indigo-200: #5e1a1a;
+  --color-indigo-600: #ff4e45; /* YouTube's dark-mode red for text and icons */
+  --color-indigo-700: #ff8a84;
+  --color-violet-50: #2b0d0d;
 
   --color-amber-50: #33260c;
   --color-amber-200: #6b4a12;
@@ -154,9 +194,9 @@
   --color-amber-800: #fde68a;
   --color-amber-900: #fef3c7;
 
-  --color-emerald-50: #0c2e26;
-  --color-emerald-600: #6ee7b7;
-  --color-emerald-700: #a7f3d0;
+  --color-emerald-50: #0d2a16;
+  --color-emerald-600: #4ade80;
+  --color-emerald-700: #86efac;
 
   --color-red-50: #3a1416;
   --color-red-500: #f87171;
@@ -226,9 +266,9 @@
 .Toastify {
   --toastify-color-light: var(--surface);
   --toastify-text-color-light: var(--color-slate-800);
-  --toastify-color-success: #10b981;
+  --toastify-color-success: #16a34a;
   --toastify-color-error: #ef4444;
-  --toastify-color-info: #6366f1;
+  --toastify-color-info: #e00000;
   --toastify-color-warning: #f59e0b;
   --toastify-font-family: var(--font-sans);
   --toastify-toast-width: 360px;

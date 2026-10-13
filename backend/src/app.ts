@@ -27,10 +27,19 @@ app.use(
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         // Video thumbnails come from several YouTube image hosts.
         "img-src": ["'self'", "data:", "https:"],
+        // Google Identity Services: the sign-in script, its button iframe, styles and token calls.
+        "script-src": ["'self'", "https://accounts.google.com/gsi/client"],
+        "frame-src": ["https://accounts.google.com/gsi/"],
+        "connect-src": ["'self'", "https://accounts.google.com/gsi/"],
+        "style-src": ["'self'", "https:", "'unsafe-inline'"],
         // Would break plain-HTTP access, e.g. testing by IP before HTTPS is set up.
         "upgrade-insecure-requests": null,
       },
     },
+    // Google's sign-in popup must be able to message this window back.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    // Google checks the page origin against the client's allowed origins; "no-referrer" hides it.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   }),
 );
 app.use(requestLogger);

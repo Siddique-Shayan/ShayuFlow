@@ -42,6 +42,36 @@ export interface Video {
   skipped: boolean
   note: string
   scheduledDate: string | null
+  /** Set on plan entries: the part of the video planned for that day (a long video spans several days). */
+  segment?: { date: string; startSec: number; endSec: number }
+}
+
+export interface AiSummary {
+  summary: string
+  keyPoints: string[]
+}
+
+/** Structured parts of an AskMafia answer. Moments are verified transcript timestamps. */
+export interface AnswerDetails {
+  covered: boolean
+  points: string[]
+  moments: { sec: number; label: string }[]
+  followUps: string[]
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+  details?: AnswerDetails
+}
+
+/** AskMafia state for one video: knowledge-base status, the user's conversation and today's quota. */
+export interface VideoChat {
+  ready: boolean
+  messages: ChatMessage[]
+  remaining: number
+  dailyLimit: number
 }
 
 export interface PlaylistReport {

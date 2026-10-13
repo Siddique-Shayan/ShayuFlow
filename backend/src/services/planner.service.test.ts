@@ -35,10 +35,51 @@ describe("deadline mode", () => {
     expect(r.reports[0].atRisk).toBe(false);
   });
 
-  it("gives an over-budget video its own day", () => {
-    const r = plan({ playlists: [{ id: "A", deadline: far, priority: 3 }], videos: vids("A", 2, 90) });
+  it("splits a video that does not fit in the time left and carries the rest over", () => {
+    // 60 min/day: 28 + 45 min videos -> day 1 is 28 min + the first 32 min of the 45
+    const r = plan({
+      playlists: [{ id: "A", deadline: far, priority: 3 }],
+      videos: [
+        { id: "A0", playlistId: "A", durationSec: 28 * 60, position: 0 },
+        { id: "A1", playlistId: "A", durationSec: 45 * 60, position: 1 },
+      ],
+    });
+    expect(r.segments.get("A0")).toEqual([{ date: start, startSec: 0, endSec: 1680 }]);
+    expect(r.segments.get("A1")).toEqual([
+      { date: start, startSec: 0, endSec: 1920 },
+      { date: d("2026-09-29"), startSec: 1920, endSec: 2700 },
+    ]);
+  });
+
+  it("spreads a long video over several days, filling each day's budget", () => {
+    const r = plan({ playlists: [{ id: "A", deadline: far, priority: 3 }], videos: vids("A", 1, 150) });
+    expect(r.segments.get("A0")?.map((s) => [iso(s.date), s.endSec - s.startSec])).toEqual([
+      ["2026-09-28", 3600],
+      ["2026-09-29", 3600],
+      ["2026-09-30", 1800],
+    ]);
     expect(iso(r.assignments.get("A0"))).toBe("2026-09-28");
-    expect(iso(r.assignments.get("A1"))).toBe("2026-09-29");
+  });
+
+  it("never leaves a tail or a part shorter than ten minutes", () => {
+    // 62 min video on a 60 min day: shrink today's part so the tail is 10 min, not 2
+    const r = plan({ playlists: [{ id: "A", deadline: far, priority: 3 }], videos: vids("A", 1, 62) });
+    expect(r.segments.get("A0")?.map((s) => s.endSec - s.startSec)).toEqual([3120, 600]);
+    // 5 min left in the day is not worth starting a 60 min video
+    const r2 = plan({
+      playlists: [{ id: "A", deadline: far, priority: 3 }],
+      videos: [
+        { id: "A0", playlistId: "A", durationSec: 55 * 60, position: 0 },
+        { id: "A1", playlistId: "A", durationSec: 60 * 60, position: 1 },
+      ],
+    });
+    expect(iso(r2.segments.get("A1")?.[0].date)).toBe("2026-09-29");
+  });
+
+  it("finishes a playlist on the day its last part is watched", () => {
+    const r = plan({ playlists: [{ id: "A", deadline: d("2026-09-28"), priority: 3 }], videos: vids("A", 1, 90) });
+    expect(iso(r.reports[0].finishDate ?? undefined)).toBe("2026-09-29");
+    expect(r.reports[0].atRisk).toBe(true);
   });
 
   it("skips days with 0 minutes", () => {
@@ -136,7 +177,8 @@ describe("weighted mode", () => {
 
   it("does not starve a low-priority playlist whose videos exceed its daily slice", () => {
     const r = run("weighted", 5, 1); // B earns 20 min a day but its videos are 30 min
-    expect(iso(r.assignments.get("B0"))).toBe("2026-09-29");
+    // B0 is watched in a 20 min part today and its last 10 min tomorrow
+    expect(r.segments.get("B0")?.map((s) => s.endSec - s.startSec)).toEqual([1200, 600]);
     expect(iso(r.assignments.get("B1"))).not.toBe(undefined);
   });
 
@@ -150,10 +192,10 @@ describe("weighted mode", () => {
       ],
       videos: [...vids("A", 1, 20), ...vids("B", 4, 30)],
     });
-    // A uses 20 of its 30-minute slice, B takes one video (30), the leftover 10 fits nothing
+    // A uses 20 of its 30-minute slice, B takes one video (30), the leftover 10 starts B1
     expect(iso(r.assignments.get("A0"))).toBe("2026-09-28");
     expect(iso(r.assignments.get("B0"))).toBe("2026-09-28");
-    expect(iso(r.assignments.get("B1"))).toBe("2026-09-29");
+    expect(r.segments.get("B1")?.[0]).toEqual({ date: start, startSec: 0, endSec: 600 });
   });
 });
 

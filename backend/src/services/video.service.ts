@@ -10,6 +10,13 @@ const syncPlaylistStatus = async (playlistId: Types.ObjectId) => {
 };
 
 export const videoService = {
+  async get(userId: string, id: string) {
+    const video = await videoRepository.findOwned(id, userId);
+    if (!video) throw new AppError(404, "Video not found");
+    const playlist = await Playlist.findById(video.playlistId).select("title");
+    return { video, playlist: playlist ? { _id: playlist._id, title: playlist.title } : null };
+  },
+
   async setCompleted(userId: string, id: string, completed: boolean) {
     const video = await videoRepository.findOwned(id, userId);
     if (!video) throw new AppError(404, "Video not found");
@@ -32,7 +39,10 @@ export const videoService = {
     if (patch.note !== undefined) video.note = patch.note;
     if (patch.skipped !== undefined) {
       video.skipped = patch.skipped;
-      if (patch.skipped) video.scheduledDate = null;
+      if (patch.skipped) {
+        video.scheduledDate = null;
+        video.set("segments", []);
+      }
     }
     await video.save();
 

@@ -58,7 +58,7 @@ function DeadlineScene() {
               <span
                 key={n}
                 className={`animate-pop flex size-6 items-center justify-center rounded-md text-[11px] font-medium ${
-                  n === 4 ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                  n === 4 ? 'bg-indigo-600 text-white dark:bg-indigo-800' : 'bg-slate-100 text-slate-500'
                 }`}
                 style={delay(1.4 + n * 0.12)}
               >

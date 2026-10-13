@@ -140,7 +140,7 @@ export default function Landing() {
 
         {/* Final call to action */}
         <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
-          <div className="rounded-3xl bg-indigo-600 px-6 py-12 text-center text-white sm:py-14">
+          <div className="rounded-3xl bg-indigo-600 px-6 py-12 dark:bg-indigo-800 text-center text-white sm:py-14">
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Your next playlist deserves a plan</h2>
             <p className="mx-auto mt-2 max-w-md text-indigo-100">It takes about a minute to set up.</p>
             <Link

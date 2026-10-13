@@ -11,6 +11,7 @@ import PlaylistDetail from './pages/PlaylistDetail'
 import Playlists from './pages/Playlists'
 import Settings from './pages/Settings'
 import Summary from './pages/Summary'
+import VideoPage from './pages/VideoPage'
 
 function Protected() {
   const { isAuthed } = useAuth()
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="playlists" element={<Playlists />} />
         <Route path="playlists/new" element={<AddPlaylist />} />
         <Route path="playlists/:id" element={<PlaylistDetail />} />
+        <Route path="videos/:id" element={<VideoPage />} />
         <Route path="plan" element={<Plan />} />
         <Route path="week" element={<Summary />} />
         <Route path="friends" element={<Friends />} />
